@@ -139,3 +139,36 @@ module "elb" {
     Environment = "dev"
   }
 }
+############
+# VPC Endpoint
+############
+resource "aws_vpc_endpoint" "s3" {
+  vpc_id       = data.aws_vpc.default.id
+  service_name = "com.amazonaws.us-east-1.s3"
+}
+
+data "aws_route_table" "rt1" {
+  filter {
+    name = "tag:Name"
+    values = ["idr-cloud-dev-private-a"]
+  }
+  vpc_id = data.aws_vpc.default.id
+}
+
+data "aws_route_table" "rt2" {
+  filter {
+    name = "tag:Name"
+    values = ["idr-cloud-dev-private-b"]
+  }
+  vpc_id = data.aws_vpc.default.id
+}
+
+resource "aws_vpc_endpoint_route_table_association" "ex1" {
+  route_table_id  = data.aws_route_table.rt1.id
+  vpc_endpoint_id = aws_vpc_endpoint.s3.id
+}
+
+resource "aws_vpc_endpoint_route_table_association" "ex2" {
+  route_table_id  = data.aws_route_table.rt2.id
+  vpc_endpoint_id = aws_vpc_endpoint.s3.id
+}
