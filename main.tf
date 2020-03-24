@@ -1,5 +1,5 @@
 variable "s3_bucket" {
-  default = "test-ha-proxy-bucket-gi-prod"
+  default = "idr-haproxy-9ew9"
 
 }
 
@@ -20,14 +20,14 @@ data "aws_vpc" "default" {
 data "aws_subnet_ids" "all" {
   filter {
     name = "tag:Name"
-    values = ["idr-cloud-dev-private-a", "idr-cloud-dev-private-b"]
+    values = ["idr-cloud-dev-data-a", "idr-cloud-dev-data-b"]
   }
   vpc_id = data.aws_vpc.default.id
 }
 
 data "aws_security_group" "default" {
   vpc_id = data.aws_vpc.default.id
-  name   = "Snowflakesg"
+  name   = "IDR-Cloud-SG"
 }
 
 data "aws_ami" "amazon_linux" {
@@ -49,10 +49,10 @@ data "aws_ami" "amazon_linux" {
 module "example_asg" {
   source = "terraform-aws-modules/autoscaling/aws"
   version = "~> 3.0"
-
+  iam_instance_profile = "s3-access-haproxy"
 
   name = "haproxy"
-  key_name = "idr-haproxy-test-key"
+  key_name = "key-cms-idr-cloud"
 
   # Launch configuration
   #
@@ -64,7 +64,7 @@ module "example_asg" {
   image_id        = data.aws_ami.amazon_linux.id
   instance_type   = "t2.micro"
   security_groups = [data.aws_security_group.default.id]
-  load_balancers  = [module.elb.this_elb_id]
+  # load_balancers  = [module.elb.this_elb_id]
 
   ebs_block_device = [
     {
@@ -108,38 +108,44 @@ module "example_asg" {
 ######
 # ELB
 ######
-module "elb" {
-  source = "terraform-aws-modules/elb/aws"
-
-  name = "elb-example"
-
-  subnets         = data.aws_subnet_ids.all.ids
-  security_groups = [data.aws_security_group.default.id]
-  internal        = true
-
-  listener = [
-    {
-      instance_port     = "443"
-      instance_protocol = "HTTP"
-      lb_port           = "443"
-      lb_protocol       = "HTTP"
-    },
-  ]
-
-  health_check = {
-    target              = "HTTP:443/"
-    interval            = 30
-    healthy_threshold   = 2
-    unhealthy_threshold = 2
-    timeout             = 5
-  }
-
+############
+resource "aws_lb" "idr-nlb-haproxy" {
+  name               = "idr-nlb-haproxy"
+  internal           = true
+  load_balancer_type = "network"
+  subnets            = data.aws_subnet_ids.all.ids
+  enable_deletion_protection = false
   tags = {
-    Owner       = "user"
-    Environment = "dev"
+    Environment = "Dev"
   }
 }
-############
+
+resource "aws_lb_listener" "front_end" {
+  load_balancer_arn = "${aws_lb.idr-nlb-haproxy.arn}"
+  port              = "443"
+  protocol          = "TCP"
+  default_action {
+    type             = "forward"
+    target_group_arn = "${aws_lb_target_group.idr-haproxy-nlbtg.arn}"
+  }
+}
+
+## Target Group for ELB
+resource "aws_lb_target_group" "idr-haproxy-nlbtg" {
+  name        = "idr-haproxy"
+  port        = 80
+  protocol    = "TCP"
+  target_type = "instance"
+  vpc_id      = data.aws_vpc.default.id
+}
+
+# ## Target Group ARN
+# resource "aws_lb_target_group_attachment" "idr-haproxy-tgattachment" {
+#   target_group_arn = "${aws_lb_target_group.idr-haproxy-nlbtg.arn}"
+#   target_id        = module.example_asg.this_autoscaling_group_id
+#   port             = 80
+# }
+
 # VPC Endpoint
 ############
 resource "aws_vpc_endpoint" "s3" {
@@ -150,7 +156,7 @@ resource "aws_vpc_endpoint" "s3" {
 data "aws_route_table" "rt1" {
   filter {
     name = "tag:Name"
-    values = ["idr-cloud-dev-private-a"]
+    values = ["idr-cloud-dev-data-a"]
   }
   vpc_id = data.aws_vpc.default.id
 }
@@ -158,7 +164,7 @@ data "aws_route_table" "rt1" {
 data "aws_route_table" "rt2" {
   filter {
     name = "tag:Name"
-    values = ["idr-cloud-dev-private-b"]
+    values = ["idr-cloud-dev-data-b"]
   }
   vpc_id = data.aws_vpc.default.id
 }

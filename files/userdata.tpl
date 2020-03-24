@@ -84,3 +84,8 @@ chown root:root /etc/haproxy/haproxy.cfg
 chmod 644 /etc/haproxy/haproxy.cfg
 
 sytemctl start haproxy
+
+EC2=`wget -q -O - http://169.254.169.254/latest/meta-data/instance-id`
+NLB_ARN=`aws elbv2 describe-load-balancers --names "idr-nlb-haproxy" --output text --query 'LoadBalancers[].LoadBalancerArn'`
+TARGET_GROUP_ARN=`aws elbv2 describe-listeners --load-balancer-arn "$$NLB_ARN" --output text --query 'Listeners[0].DefaultActions[].TargetGroupArn'`
+aws elbv2 register-targets --target-group-arn $$TARGET_GROUP_ARN --targets Id=$$EC2,Port=80
